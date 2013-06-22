@@ -71,6 +71,10 @@ var ChatView = Backbone.View.extend({
       keyup: function(event) {
         var self = this;
         if ($(this).val().length) {
+
+          // Reset partialMatch
+          if (event.keyCode !== 9) delete self.partialMatch;
+
           if (keydownEnter && event.keyCode === 13) {
             var message = $(this).val();
             // Handle IRC commands
@@ -88,7 +92,7 @@ var ChatView = Backbone.View.extend({
             var searchRe;
             var match = false;
             var channel = irc.chatWindows.getActive();
-            var sentence = $('#chat-input').val().split(' ');
+            var sentence = $('#chat-input').val().trim().split(' ');
             var partialMatch = sentence.pop();
             var users = channel.userList.getUsers();
             var userIndex=0;
@@ -127,7 +131,8 @@ var ChatView = Backbone.View.extend({
                 //We break from our loop
                 break;
               } else if(i === users.length-1 && match === false) {
-                sentence.push('');
+                // Prevent input from clearing on subsequent tab-press
+                sentence.push(partialMatch);
                 $('#chat-input').val(sentence.join(' '));
               }
             }
@@ -164,7 +169,7 @@ var ChatView = Backbone.View.extend({
       $(view.el).addClass('message-me');
     }
 
-    if(['join', 'part', 'topic', 'nick', 'quit'].indexOf(type) !== -1){
+    if(['join', 'part', 'topic', 'nick', 'quit', 'mode'].indexOf(type) !== -1){
       $(view.el).addClass('message_notification');
     }
 
@@ -174,7 +179,7 @@ var ChatView = Backbone.View.extend({
     if (chatWindowHeight > 0) {
       // If the user isn't scrolling go to the bottom message
       if ((chatWindowHeight - $chatWindow.scrollTop()) < 200) {
-        $('#chat-contents').scrollTo(view.el, 200);
+        $('#chat-contents').animate({ scrollTop: $('#chat-contents')[0].scrollHeight }, 750);
       }
     }
   },
@@ -198,14 +203,14 @@ var ChatView = Backbone.View.extend({
   },
 
   handleClick: function() {
-    $('.hide_embed').live("click", function() {
+    $('.hide_embed').on("click", function() {
       var embed_div = $(this).parent().siblings('.embed');
       embed_div.addClass('hide');
       $(this).siblings('.show_embed').removeClass('hide');
       $(this).addClass('hide');
     });
 
-    $('.show_embed').live("click", function() {
+    $('.show_embed').on("click", function() {
       var embed_div = $(this).parent().siblings('.embed');
       embed_div.removeClass('hide');
       $(this).siblings('.hide_embed').removeClass('hide');
