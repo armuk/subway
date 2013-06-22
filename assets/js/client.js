@@ -1,6 +1,4 @@
-//= require 'libs/socket.io.js'
-//= require 'libs/jquery-1.7.1.min.js'
-//= require 'libs/jquery.scrollTo-1.4.2-min.js'
+//= require 'libs/jquery-2.0.0.min.js'
 //= require 'libs/underscore-min.js'
 //= require 'libs/backbone-min.js'
 //= require 'libs/ICanHaz.min.js'
@@ -48,14 +46,6 @@ $(function() {
   $(window).bind('beforeunload', function() {
     if(!window.irc.connected || window.irc.loggedIn) { return null; }
     return "If you leave, you'll be signed out of Subway.";
-  });
-
-  irc.socket.emit('getDatabaseState', {});
-
-  irc.socket.on('databaseState', function(data) {
-    if(data.state === 0){
-      $('#login, #register').hide();
-    }
   });
 
   // Registration (server joined)
@@ -171,7 +161,7 @@ $(function() {
     }
   });
 
-  irc.socket.on('message', function(data) {
+  irc.socket.on('message#', function(data) {
     var chatWindow = irc.chatWindows.getByName(data.to.toLowerCase());
     var type = 'message';
     // Only handle channel messages here; PMs handled separately
@@ -181,6 +171,31 @@ $(function() {
       // Handle PMs intiated by me
       chatWindow.stream.add({sender: data.from.toLowerCase(), raw: data.text, type: 'pm'});
     }
+  });
+
+  irc.socket.on('action', function(data) {
+    var chatWindow = irc.chatWindows.getByName(data.to.toLowerCase());
+    var type = 'message';
+
+    chatWindow.stream.add({sender: data.from, raw: ' ACTION ' + data.text, type: type});
+  });
+
+  irc.socket.on('+mode', function(data) {
+    var chatWindow = irc.chatWindows.getByName(data.channel.toLowerCase());
+
+    var message = 
+      'sets mode +' + data.mode + ' on ' + (data.argument ? data.argument : data.channel);
+
+    chatWindow.stream.add({sender: data.by, raw: message, type: 'mode'});
+  });
+
+  irc.socket.on('-mode', function(data) {
+    var chatWindow = irc.chatWindows.getByName(data.channel.toLowerCase());
+
+    var message = 
+      'sets mode -' + data.mode + ' on ' + (data.argument ? data.argument : data.channel);
+
+    chatWindow.stream.add({sender: data.by, raw: message, type: 'mode'});
   });
 
   irc.socket.on('pm', function(data) {
@@ -285,7 +300,9 @@ $(function() {
   });
 
   irc.socket.on('netError', function(data) {
-    irc.appView.showError('Invalid server');
+    if(!$('.alert-error').length) {
+      irc.appView.showError('Invalid server');
+    }
   });
 
   irc.socket.on('login_error', function(data) {
@@ -300,9 +317,6 @@ $(function() {
 
     // move to main view
     irc.appView.render();
-
-    // remove login and register button if no database
-    irc.socket.emit('getDatabaseState', {});
   });
 
   irc.socket.on('oldMessages', function(data){
@@ -311,46 +325,47 @@ $(function() {
 
     if (data.messages) {
         $.each(data.messages.reverse(), function(index, message){
-          if($('#' + message._id).length) {
+          if($('#msg' + message.id).length) {
             return true; //continue to next iteration
           }
 
           var type = '';
           var message_html;
-          if (message.message.substr(1, 6) === 'ACTION') {
+          if (message.msg.substr(1, 6) === 'ACTION') {
             message_html = ich.action({
-              user: message.user,
-              content: message.message.substr(8),
-              renderedTime: utils.formatDate(message.date)
+              user: message.from,
+              content: message.msg.substr(8),
+              renderedTime: utils.formatDate(message.at)
             }, true);
           } else {
             message_html = ich.message({
-              user: message.user,
-              content: message.message,
-              renderedTime: utils.formatDate(message.date)
+              user: message.from,
+              content: message.msg,
+              renderedTime: utils.formatDate(message.at)
             }, true);
           }
 
-
-          if(message.user == irc.me.get('nick')){
+          if(message.from == irc.me.get('nick')){
             type = 'message-me';
           } else {
             message_html = utils.mentions(message_html);
           }
 
           message_html = utils.linkify(message_html);
-          message_html = "<div id=\"" + message._id + "\" class=\"message-box " + type + "\">" + message_html + "</div>";
+          message_html = "<div id=\"msg" + message.id + "\" class=\"message-box " + type + "\">" + message_html + "</div>";
           output += message_html;
         });
     }
 
-    var old_height = channel.view.$('#chat-contents')[0].scrollHeight;
-    channel.view.$('#chat-contents').prepend(output);
-    var new_height = channel.view.$('#chat-contents')[0].scrollHeight+1000-old_height;
+    try {
+      var old_height = channel.view.$('#chat-contents')[0].scrollHeight;
+      channel.view.$('#chat-contents').prepend(output);
+      var new_height = channel.view.$('#chat-contents')[0].scrollHeight+1000-old_height;
 
-    if(new_height > 1200){
-      $('#chat-contents').scrollTop(new_height);
-    }
+      if(new_height > 1200){
+        $('#chat-contents').scrollTop(new_height);
+      }
+    } catch (err) {}
   });
 
   irc.commands = (function(){
@@ -403,7 +418,14 @@ $(function() {
   }());
 
   irc.commands.add('join', function(args){
-    irc.socket.emit('join', args[0]);
+    var connect = args[0];
+
+    // Support using channel keys and passwords.
+    if (args[1]) {
+      connect = connect + ' ' + args[1]
+    }
+
+    irc.socket.emit('join', connect);
   });
 
   irc.commands.add('part', function(args){
